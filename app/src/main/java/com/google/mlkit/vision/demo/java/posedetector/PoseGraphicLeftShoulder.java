@@ -31,12 +31,9 @@ import com.google.mlkit.vision.pose.PoseLandmark;
 import java.util.List;
 import java.util.Locale;
 import android.graphics.RectF;
+import android.os.Build;
+import androidx.annotation.RequiresApi;
 
-import java.io.IOException;
-import java.util.logging.FileHandler;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import java.util.logging.SimpleFormatter;
 
 
 /** Draw the detected pose in preview. */
@@ -57,7 +54,7 @@ public class PoseGraphicLeftShoulder extends Graphic {
     private final List<String> poseClassification;
     private final Paint classificationTextPaint;
     private final Paint leftPaint;
-    private final Paint rightPaint;
+//    private final Paint rightPaint;
     private final Paint whitePaint;
 
     PoseGraphicLeftShoulder(
@@ -86,30 +83,11 @@ public class PoseGraphicLeftShoulder extends Graphic {
         leftPaint = new Paint();
         leftPaint.setStrokeWidth(STROKE_WIDTH);
         leftPaint.setColor(Color.GREEN);
-        rightPaint = new Paint();
-        rightPaint.setStrokeWidth(STROKE_WIDTH);
-        rightPaint.setColor(Color.YELLOW);
-
-
-        Logger logger = Logger.getLogger("MyLog");
-        FileHandler fh;
-        // This block configure the logger with handler and formatter
-        try {
-            fh = new FileHandler("C:/temp/test/MyLogFile.log");
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-        logger.addHandler(fh);
-        //logger.setLevel(Level.ALL);
-        SimpleFormatter formatter = new SimpleFormatter();
-        fh.setFormatter(formatter);
-
-        // the following statement is used to log any messages
-        logger.info("My first log");
         }
 
 
 
+    @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
     @Override
     public void draw(Canvas canvas) {
         List<PoseLandmark> landmarks = pose.getAllPoseLandmarks();
@@ -146,24 +124,33 @@ public class PoseGraphicLeftShoulder extends Graphic {
         PoseLandmark leftElbow = pose.getPoseLandmark(PoseLandmark.LEFT_ELBOW);
         PoseLandmark leftHip = pose.getPoseLandmark(PoseLandmark.LEFT_HIP);
 
+        if (leftShoulder == null || leftElbow == null || leftHip == null)
+            return;
 
         // Left body
         drawLine(canvas, leftShoulder, leftElbow, leftPaint);
         drawLine(canvas, leftShoulder, leftHip, leftPaint);
 
-        drawArc(canvas, leftElbow, leftShoulder, leftHip);
+        double angle = calculateAngle(leftElbow, leftShoulder, leftHip);
+        drawArc(canvas, leftElbow, leftShoulder, angle);
 
+        // Draw angle for leftShoulder
+        canvas.drawText(
+                        String.format(Locale.US, "%.0f", angle),
+                        translateX(leftShoulder.getPosition().x),
+                        translateY(leftShoulder.getPosition().y),
+                        whitePaint);
 
         // Draw inFrameLikelihood for all points
-//        if (showInFrameLikelihood) {
-//            for (PoseLandmark landmark : landmarks) {
-//                canvas.drawText(
-//                        String.format(Locale.US, "%.2f", landmark.getInFrameLikelihood()),
-//                        translateX(landmark.getPosition().x),
-//                        translateY(landmark.getPosition().y),
-//                        whitePaint);
-//            }
-//        }
+        if (showInFrameLikelihood) {
+            for (PoseLandmark landmark : landmarks) {
+                canvas.drawText(
+                        String.format(Locale.US, "%.2f", landmark.getInFrameLikelihood()),
+                        translateX(landmark.getPosition().x),
+                        translateY(landmark.getPosition().y),
+                        whitePaint);
+            }
+        }
     }
 
     void drawPoint(Canvas canvas, PoseLandmark landmark, Paint paint) {
@@ -192,28 +179,37 @@ public class PoseGraphicLeftShoulder extends Graphic {
         return angle;
     }
 
-    void drawArc(Canvas canvas, PoseLandmark pointA, PoseLandmark pointB, PoseLandmark pointC){
+    void drawArc(Canvas canvas, PoseLandmark pointA, PoseLandmark pointB, double angle){
 
         // Calculate the radius (distance from midpoint to any of the end points)
-        double radius = Math.sqrt(Math.pow(pointB.getPosition().x - pointA.getPosition().x, 2) + Math.pow(pointB.getPosition().y - pointA.getPosition().y, 2));
+//        double radius = Math.sqrt(Math.pow(pointB.getPosition().x - pointA.getPosition().x, 2) + Math.pow(pointB.getPosition().y - pointA.getPosition().y, 2));
+
+        PointF3D pa = pointA.getPosition3D();
+        PointF3D pb = pointB.getPosition3D();
+
+        float xa = translateX(pa.getX());
+        float ya = translateY(pa.getY());
+
+        float xb = translateX(pb.getX());
+        float yb = translateY(pb.getY());
+
+        float radius = (float)Math.sqrt(Math.pow(xa- xb, 2) + Math.pow(ya - yb, 2))/2;
 
         // Calculate the start and sweep angles
-        double startAngle = Math.toDegrees(Math.atan2(pointA.getPosition().y - pointB.getPosition().y, pointA.getPosition().x - pointB.getPosition().x));
-        double endAngle = Math.toDegrees(Math.atan2(pointC.getPosition().y - pointB.getPosition().y, pointA.getPosition().x - pointB.getPosition().x));
+        double startAngle = Math.toDegrees(Math.atan2(ya - yb, xa - xb));
 
-        // Initialize Paint object
-        Paint paint = new Paint();
-        paint.setColor(Color.RED); // Set color to red
-        paint.setStyle(Paint.Style.STROKE); // Set style to stroke
-        paint.setStrokeWidth(5); // Set stroke width
+        Paint p = new Paint();
+        p.setColor(Color.BLACK);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(5f);
 
-        // Draw the arc
-        RectF arcBounds = new RectF((float)(pointB.getPosition().x - radius), (float)(pointB.getPosition().y - radius), (float)(pointB.getPosition().x + radius), (float)(pointB.getPosition().y + radius));
-        canvas.drawArc(arcBounds, (float) startAngle, (float) (endAngle - startAngle), false, paint);
-
+//        // Draw the arc
+        RectF arcBounds = new RectF((xb - radius), (yb - radius), (xb + radius), (yb + radius));
+        canvas.drawArc(arcBounds, (float) startAngle, (float) (angle), false, p);
     }
 
-    void drawLine(Canvas canvas, PoseLandmark startLandmark, PoseLandmark endLandmark, Paint paint) {
+
+        void drawLine(Canvas canvas, PoseLandmark startLandmark, PoseLandmark endLandmark, Paint paint) {
         PointF3D start = startLandmark.getPosition3D();
         PointF3D end = endLandmark.getPosition3D();
 
